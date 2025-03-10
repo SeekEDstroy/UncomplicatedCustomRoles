@@ -13,10 +13,7 @@ namespace UncomplicatedCustomRoles.Manager
 {
     internal class ImportManager
     {
-        public static List<IPlugin<IConfig>> ActivePlugins => new();
-
-        public const float WaitingTime = 5f;
-
+        public static HashSet<IPlugin<IConfig>> ActivePlugins { get; } = new();
         private static bool _alreadyLoaded = false;
 
         public static void Init()
@@ -25,41 +22,108 @@ namespace UncomplicatedCustomRoles.Manager
                 return;
 
             ActivePlugins.Clear();
-            // Call a delayed task
             Task.Run(Actor);
         }
 
         private static void Actor()
         {
-            if (Plugin.Instance.Config.EnableBasicLogs)
-                LogManager.Info($"Checking for CustomRole registered in other plugins to import...");
-
-            _alreadyLoaded = true;
-
-            foreach (IPlugin<IConfig> plugin in Loader.Plugins.Where(plugin => plugin.Name != Plugin.Instance.Name))
+            try
             {
-                LogManager.Silent($"[Import Manager] Passing plugin {plugin.Name}");
-                foreach (Type type in plugin.Assembly.GetTypes())
+                if (Plugin.Instance == null)
+                {
+                    if (Plugin.Instance.Config.EnableBasicLogs) {
+                        LogManager.Error("Plugin.Instance is NULL! Aborting import.");
+                    }
+                    
+                    return;
+                }
+
+                _alreadyLoaded = true;
+                var pluginsToProcess = Loader.Plugins?.ToList() ?? new List<IPlugin<IConfig>>();
+
+                if (Plugin.Instance.Config.EnableBasicLogs) {
+                    LogManager.Info("Starting import of CustomRoles from other plugins...");
+                    LogManager.Debug($"Total Plugins Found: {Loader.Plugins?.Count() ?? 0}");
+                    LogManager.Debug($"Plugins to Process: {pluginsToProcess.Count}");
+                }
+
+                foreach (var plugin in pluginsToProcess)
+                {
+                    if (plugin == null)
+                    {
+                        if (Plugin.Instance.Config.EnableBasicLogs) {
+                            LogManager.Warn("Null plugin found, skipping...");
+                        }
+                        
+                        continue;
+                    }
+
+                    if (Plugin.Instance.Config.EnableBasicLogs) {
+                        LogManager.Debug($"Processing plugin: {plugin.Name}");
+                    }
+
                     try
                     {
-                        object[] attribs = type.GetCustomAttributes(typeof(PluginCustomRole), false);
-                        if (attribs != null && attribs.Length > 0 && (type.IsSubclassOf(typeof(ICustomRole)) || type.IsSubclassOf(typeof(CustomRole)) || type.IsSubclassOf(typeof(EventCustomRole))))
+                        var assembly = plugin.Assembly;
+                        if (assembly == null)
                         {
-                            LogManager.Silent("Importing it!");
-                            ActivePlugins.TryAdd(plugin);
+                            if (Plugin.Instance.Config.EnableBasicLogs) {
+                                LogManager.Error($"Assembly for plugin {plugin.Name} is null.");
+                            }
+                            
+                            continue;
+                        }
 
-                            ICustomRole Role = Activator.CreateInstance(type) as ICustomRole;
-
-                            if (Plugin.Instance.Config.EnableBasicLogs)
-                                LogManager.Info($"Imported CustomRole {Role.Name} ({Role.Id}) through Attribute from plugin {plugin.Name} (v{plugin.Version})");
-
-                            CustomRole.Register(Role);
+                        var types = assembly.GetTypes();
+                        foreach (var type in types)
+                        {
+                            var attribs = type.GetCustomAttributes(typeof(PluginCustomRole), false);
+                            if (attribs.Length > 0 && typeof(ICustomRole).IsAssignableFrom(type) && !type.IsInterface && !type.IsAbstract)
+                            {
+                                if (Plugin.Instance.Config.EnableBasicLogs) {
+                                    LogManager.Info($"Found role: {type.FullName}");
+                                }
+                                    
+                                try
+                                {
+                                    var instance = Activator.CreateInstance(type);
+                                    if (instance is ICustomRole role)
+                                    {
+                                        if (Plugin.Instance.Config.EnableBasicLogs) {
+                                            LogManager.Info($"Imported role: {role.Name} (ID: {role.Id}) from {plugin.Name}");
+                                        }
+                                        
+                                        CustomRole.Register(role);
+                                    }
+                                    else
+                                    {
+                                        if (Plugin.Instance.Config.EnableBasicLogs) {
+                                            LogManager.Error($"Error: Instance of {type.FullName} is null or not of type ICustomRole.");
+                                        }
+                                    }
+                                }
+                                catch (Exception instEx)
+                                {
+                                    if (Plugin.Instance.Config.EnableBasicLogs) {
+                                        LogManager.Error($"Error creating instance of {type.FullName}: {instEx.Message}");
+                                    }
+                                }
+                            }
                         }
                     }
-                    catch (Exception e)
+                    catch (Exception pluginEx)
                     {
-                        LogManager.Error($"Error while registering CustomRole from class by Attribute: {e.GetType().FullName} - {e.Message}\nType: {type.FullName} [{plugin.Name}] - Source: {e.Source}");
+                        if (Plugin.Instance.Config.EnableBasicLogs) {
+                            LogManager.Error($"Error processing plugin {plugin.Name}: {pluginEx.Message}");
+                        }
                     }
+                }
+            }
+            catch (Exception e)
+            {
+                if (Plugin.Instance.Config.EnableBasicLogs) {
+                    LogManager.Error($"{e.Message}, {e.StackTrace}");
+                }
             }
         }
     }
