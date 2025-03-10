@@ -1,4 +1,4 @@
-﻿using Exiled.API.Interfaces;
+using Exiled.API.Interfaces;
 using Exiled.Loader;
 using System;
 using System.Collections.Generic;
@@ -7,13 +7,12 @@ using System.Threading.Tasks;
 using UncomplicatedCustomRoles.API.Attributes;
 using UncomplicatedCustomRoles.API.Features;
 using UncomplicatedCustomRoles.API.Interfaces;
-using UncomplicatedCustomRoles.Extensions;
 
 namespace UncomplicatedCustomRoles.Manager
 {
     internal class ImportManager
     {
-        public static HashSet<IPlugin<IConfig>> ActivePlugins { get; } = new();
+        public static HashSet<IPlugin<IConfig>> ActivePlugins { get; } = new HashSet<IPlugin<IConfig>>();
         private static bool _alreadyLoaded = false;
 
         public static void Init()
@@ -39,7 +38,7 @@ namespace UncomplicatedCustomRoles.Manager
                 }
 
                 _alreadyLoaded = true;
-                var pluginsToProcess = Loader.Plugins?.ToList() ?? new List<IPlugin<IConfig>>();
+                List<IPlugin<IConfig>> pluginsToProcess = Loader.Plugins?.ToList() ?? new List<IPlugin<IConfig>>();
 
                 if (Plugin.Instance.Config.EnableBasicLogs) {
                     LogManager.Info("Starting import of CustomRoles from other plugins...");
@@ -47,7 +46,7 @@ namespace UncomplicatedCustomRoles.Manager
                     LogManager.Debug($"Plugins to Process: {pluginsToProcess.Count}");
                 }
 
-                foreach (var plugin in pluginsToProcess)
+                foreach (IPlugin<IConfig> plugin in pluginsToProcess)
                 {
                     if (plugin == null)
                     {
@@ -64,7 +63,7 @@ namespace UncomplicatedCustomRoles.Manager
 
                     try
                     {
-                        var assembly = plugin.Assembly;
+                        System.Reflection.Assembly assembly = plugin.Assembly;
                         if (assembly == null)
                         {
                             if (Plugin.Instance.Config.EnableBasicLogs) {
@@ -74,10 +73,10 @@ namespace UncomplicatedCustomRoles.Manager
                             continue;
                         }
 
-                        var types = assembly.GetTypes();
-                        foreach (var type in types)
+                        Type[] types = assembly.GetTypes();
+                        foreach (Type type in types)
                         {
-                            var attribs = type.GetCustomAttributes(typeof(PluginCustomRole), false);
+                            object[] attribs = type.GetCustomAttributes(typeof(PluginCustomRole), false);
                             if (attribs.Length > 0 && typeof(ICustomRole).IsAssignableFrom(type) && !type.IsInterface && !type.IsAbstract)
                             {
                                 if (Plugin.Instance.Config.EnableBasicLogs) {
@@ -86,7 +85,7 @@ namespace UncomplicatedCustomRoles.Manager
                                     
                                 try
                                 {
-                                    var instance = Activator.CreateInstance(type);
+                                    object instance = Activator.CreateInstance(type);
                                     if (instance is ICustomRole role)
                                     {
                                         if (Plugin.Instance.Config.EnableBasicLogs) {
